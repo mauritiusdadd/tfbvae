@@ -449,7 +449,13 @@ class BetaVariationalAutoencoder(tf.keras.Model):
             z_mean, z_log_var, z = self.encoder(data, training=True)
             y_pred = self.decoder(z, training=True)
 
-            rec_loss = keras.losses.mean_squared_error(data, y_pred)
+            if not dims:
+                rec_loss = keras.losses.mean_squared_error(data, y_pred)
+            else:
+                rec_loss = tf.reduce_sum(
+                    keras.losses.mean_squared_error(data, y_pred),
+                    axis=dims
+                )
 
             kl_loss = (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
             kl_loss = -0.5 * tf.reduce_sum(kl_loss, axis=1)
@@ -498,7 +504,13 @@ class BetaVariationalAutoencoder(tf.keras.Model):
         z_mean, z_log_var, z = self.encoder(data, training=False)
         y_pred = self.decoder(z_mean, training=False)
 
-        rec_loss = keras.losses.mean_squared_error(data, y_pred)
+        if not dims:
+            rec_loss = keras.losses.mean_squared_error(data, y_pred)
+        else:
+            rec_loss = tf.reduce_sum(
+                keras.losses.mean_squared_error(data, y_pred),
+                axis=dims
+            )
 
         kl_loss = (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
         kl_loss = -0.5 * tf.reduce_sum(kl_loss, axis=1)
