@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tfbvae"
+version = "2024.0.1"
+dependencies = [
+  "tensorflow",
+  "pandas",
+  "matplotlib",
+  "numpy",
+]
+requires-python = ">=3.8"
+authors = [
+  {name = "Maurizio D'Addona", email = "mauritiusdadd@gmail.com"},
+]
+maintainers = [
+  {name = "Maurizio D'Addona", email = "mauritiusdadd@gmail.com"},
+]
+description = "A simple Beta-Variational Auto Encoder based on tensorflow"
+readme = "README.rst"
+license = {file = "LICENSE.txt"}
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python"
+]
