@@ -447,23 +447,15 @@ class BetaVariationalAutoencoder(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             z_mean, z_log_var, z = self.encoder(data, training=True)
-            reconstruction = self.decoder(z, training=True)
+            y_pred = self.decoder(z, training=True)
 
-            if not dims:
-                rec_loss = keras.losses.mean_squared_error(
-                    data,
-                    reconstruction
-                )
-            else:
-                rec_loss = tf.reduce_sum(
-                    keras.losses.mean_squared_error(data, reconstruction),
-                    axis=dims
-                )
+            rec_loss = keras.losses.mean_squared_error(data, y_pred)
 
             kl_loss = (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
             kl_loss = -0.5 * tf.reduce_sum(kl_loss, axis=1)
 
-            total_loss = rec_loss + kl_loss + sum(self.losses)
+            total_loss = 2*((1 - self._beta)*rec_loss + self._beta*kl_loss)
+            total_loss += sum(self.losses)
 
         grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
@@ -475,7 +467,7 @@ class BetaVariationalAutoencoder(tf.keras.Model):
         metrics_dict = {}
 
         for metric in self.metrics:
-            metric.update_state(data, reconstruction)
+            metric.update_state(data, y_pred)
             metrics_dict[metric.name] = metric.result()
 
         metrics_dict['loss'] = self.total_loss_tracker.result()
@@ -506,18 +498,13 @@ class BetaVariationalAutoencoder(tf.keras.Model):
         z_mean, z_log_var, z = self.encoder(data, training=False)
         y_pred = self.decoder(z_mean, training=False)
 
-        if not dims:
-            rec_loss = keras.losses.mean_squared_error(data, y_pred)
-        else:
-            rec_loss = tf.reduce_sum(
-                keras.losses.mean_squared_error(data, y_pred),
-                axis=dims
-            )
+        rec_loss = keras.losses.mean_squared_error(data, y_pred)
 
         kl_loss = (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
         kl_loss = -0.5 * tf.reduce_sum(kl_loss, axis=1)
 
-        total_loss = rec_loss + kl_loss + sum(self.losses)
+        total_loss = 2*((1 - self._beta)*rec_loss + self._beta*kl_loss)
+        total_loss += sum(self.losses)
 
         self.total_loss_tracker.update_state(total_loss)
         self.rec_loss_tracker.update_state(rec_loss)
