@@ -11,15 +11,18 @@ import datetime
 import threading
 from pathlib import Path
 
-import h5py
+from tqdm.auto import tqdm
 
+import h5py
 import numpy as np
 
-import tensorflow as tf
+from matplotlib import pyplot as plt
+from matplotlib import animation
 
+import tensorflow as tf
 from tensorflow.python.client import device_lib
 
-import fakecurses
+from . import fakecurses
 
 _do_update_lock = threading.Condition()
 _last_update = 0
@@ -567,6 +570,8 @@ class SaveLatentSpaceCallback(tf.keras.callbacks.Callback):
 
     def __init__(self, out_file, data, overwrite=True):
         self.out_file = out_file
+        if not self.out_file.endswith('.h5'):
+            self.out_file = self.out_file + '.h5'
         self.data = data
         self.h5f = None
         self.epoch_record = {}
@@ -585,12 +590,10 @@ class SaveLatentSpaceCallback(tf.keras.callbacks.Callback):
             self.h5f.close()
 
     def on_train_begin(self, *args):
-        h5f_filename = self.out_file + '.h5'
+        if self.overwrite and os.path.isfile(self.out_file):
+            Path.unlink(self.out_file)
 
-        if self.overwrite and os.path.isfile(h5f_filename):
-            Path.unlink(h5f_filename)
-
-        self.h5f = h5py.File(h5f_filename, 'w')
+        self.h5f = h5py.File(self.out_file, 'w')
 
     def on_epoch_end(self, epoch, logs=None):
         epoch_label = f'epoch_{epoch}'
@@ -607,6 +610,71 @@ class SaveLatentSpaceCallback(tf.keras.callbacks.Callback):
         if self.h5f:
             self.h5f.close()
 
+    def saveLatentAnimation(self, dataset_file=None, plot_kwargs={},
+                            figsize=(8, 6), static=False, outdir='.',
+                            fps=15, metadata={}):
+        if not os.path.isdir(outdir):
+            os.makedirs(outdir)
+
+        if dataset_file is None:
+            dataset_file = self.out_file
+
+        with h5py.File(dataset_file, 'r') as h5f:
+            epoch_record = {int(k.split('_')[-1]): k for k in h5f.keys()}
+
+            xmin = None
+            xmax = None
+            ymin = None
+            ymax = None
+
+            writer = animation.writers['ffmpeg'](fps=fps, metadata=metadata)
+
+            fig, ax = plt.subplots(1, 1, figsize=figsize)
+            ax.set_axis_off()
+
+            if static:
+                for k in (pbar := tqdm(sorted(epoch_record.keys()))):
+                    pbar.set_description(f"Processing")
+                    dataset_key = epoch_record[k]
+                    dataset = h5f[dataset_key][()]
+                    ds_xmin, ds_ymin = dataset.min(axis=0)
+                    ds_xmax, ds_ymax = dataset.max(axis=0)
+                    xmin = ds_xmin if xmin is None else np.minimum(xmin, ds_xmin)
+                    ymin = ds_ymin if ymin is None else np.minimum(ymin, ds_ymin)
+                    xmax = ds_xmax if xmax is None else np.maximum(xmax, ds_xmax)
+                    ymax = ds_ymax if ymax is None else np.maximum(ymax, ds_ymax)
+                ax.set_xlim(xmin, xmax)
+                ax.set_ylim(ymin, ymax)
+
+            try:
+                with writer.saving(fig, f"{dataset_file}.mp4", 100):
+                    sc_plot = None
+
+                    for k in (pbar := tqdm(sorted(epoch_record.keys()))):
+                        pbar.set_description(f"Rendering")
+                        dataset_key = epoch_record[k]
+                        dataset = h5f[dataset_key][()]
+
+                        if not static:
+                            ds_xmin, ds_ymin = dataset.min(axis=0)
+                            ds_xmax, ds_ymax = dataset.max(axis=0)
+                            ax.set_xlim(ds_xmin, ds_xmax)
+                            ax.set_ylim(ds_ymin, ds_ymax)
+
+                        if sc_plot is None:
+                            sc_plot = ax.scatter(
+                                dataset.T[0],
+                                dataset.T[1],
+                                **plot_kwargs
+                            )
+                        else:
+                            sc_plot.set_offsets(dataset)
+                        writer.grab_frame()
+            except (Exception, KeyboardInterrupt):
+                print("Aborted")
+            plt.close(fig)
+
+
 ##############################################
 #             Distance Functions             #
 ##############################################
@@ -614,7 +682,8 @@ class SaveLatentSpaceCallback(tf.keras.callbacks.Callback):
 @tf.function
 def tf_pdist_cosine(X):
     """
-    Cosine distance
+    Cosine distance.
+
     See: https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.pdist.html
 
     Parameters
@@ -642,7 +711,8 @@ def tf_pdist_cosine(X):
 @tf.function
 def tf_pdist_correlation(X):
     """
-    Correlation distance
+    Correlation distance.
+
     See: https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.pdist.html
 
     Parameters
@@ -670,7 +740,7 @@ def tf_pdist_correlation(X):
 
 def tf_pdist_euclidean(X):
     """
-    Euclidean distance
+    Euclidean distance.
 
     Parameters
     ----------

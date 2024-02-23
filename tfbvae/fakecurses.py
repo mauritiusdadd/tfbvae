@@ -49,8 +49,9 @@ def isnotebook():
     except NameError:
         # Probably standard Python interpreter
         shell_type = None
-    
+
     return shell_type
+
 
 ##############################################
 # Fake curse interface                       #
@@ -101,17 +102,17 @@ def ncursedoupdate(stdscr):
 
 
 class FakeCurses():
-    
+
     def __init__(self):
         self.lines = []
-        
+
     def keypad(self, *args, **kargs):
         # Not implemented
         pass
-    
+
     def addstr(self, y, x, text, fmt=None):
         self.lines.append((y, x, text))
-        
+
     def noutrefresh(self):
         global _lines_buffer
         global _lines_buffer_lock
@@ -130,7 +131,7 @@ class FakeCurses():
                     new_line += text
         _lines_buffer_lock.release()
         self.lines = []
-    
+
     def doupdate(self):
         global _lines_buffer
         global _lines_buffer_lock
@@ -156,7 +157,7 @@ class FakeCurses():
         sys.stdout.write(buffer)
         sys.stdout.flush()
         _lines_buffer_lock.release()
-            
+
     def clear(self):
         global _lines_buffer
         _lines_buffer = {}

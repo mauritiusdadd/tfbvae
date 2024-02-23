@@ -33,7 +33,7 @@ from tensorflow.keras import layers, regularizers
 
 from tensorflow.python.client import device_lib
 
-import tfutils
+from . import tfutils
 
 # Local directory to save module testing results
 TEST_OUT_DIR = "tfvae_test_out"
