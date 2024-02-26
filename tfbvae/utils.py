@@ -60,16 +60,16 @@ def separateContinuum(flux, m=1, sigma=10, mask=None):
     return continuum, lines
 
 
-def getNormedHist(data, n_nins=200, axis=-1):
+def getNormedHist(data, n_bins=200, axis=-1):
     mask = np.isnan(data)
 
-    medianf = np.median(data[~mask], axis=-1)
-    registered = data - medianf
-    maxf = np.max(np.abs(registered[~mask]), axis=-1)
-    data = registered / maxf
+    medianf = np.nanmedian(data, axis=-1)
+    registered = (data.T - medianf)
+    maxf = np.nanmax(np.abs(registered), axis=0)
+    data = (registered / maxf).T
 
     data = np.clip(data, -1, 1)
-    bins = np.linspace(-1, 1, n_nins)
+    bins = np.linspace(-1, 1, n_bins)
 
     if len(data.shape) > 1:
         hist = np.apply_along_axis(
@@ -77,7 +77,7 @@ def getNormedHist(data, n_nins=200, axis=-1):
             axis=-1,
             arr=data
         )
-        return (hist, bins)
+        return ((hist.T / np.max(hist, axis=-1)).T, bins)
     else:
         return np.histogram(data, bins)
 
