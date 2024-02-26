@@ -24,6 +24,13 @@ from tensorflow.python.client import device_lib
 
 from . import fakecurses
 
+try:
+    from IPython import display
+except Exception:
+    HAS_IPYTHON = False
+else:
+    HAS_IPYTHON = True
+
 _do_update_lock = threading.Condition()
 _last_update = 0
 
@@ -568,14 +575,24 @@ class AdvancedEarlyStopCallback(tf.keras.callbacks.Callback):
 class SaveLatentSpaceCallback(tf.keras.callbacks.Callback):
     """Save the latetnt space at each epoch."""
 
-    def __init__(self, out_file, data, overwrite=True):
-        self.out_file = out_file
-        if not self.out_file.endswith('.h5'):
-            self.out_file = self.out_file + '.h5'
+    def __init__(self, out_file, data, out_dir='latent_space_history',
+                 overwrite=True, notebook_liveview=False, plot_kwargs={}):
+
+        if not out_file.endswith('.h5'):
+            out_file = out_file + '.h5'
+
+        if not os.path.isdir(out_dir):
+            os.makedirs(out_dir)
+
+        self.out_dir = out_dir
+        self.out_file = os.path.join(out_dir, out_file)
         self.data = data
         self.h5f = None
         self.epoch_record = {}
         self.overwrite = overwrite
+        self.notebook_liveview = notebook_liveview
+        self._lw = None
+        self.plot_kwargs = plot_kwargs
 
     def __del__(self):
         """
@@ -606,13 +623,43 @@ class SaveLatentSpaceCallback(tf.keras.callbacks.Callback):
             self.epoch_record[epoch] = epoch_label
             self.h5f.create_dataset(epoch_label, data=z_mean)
 
+            do_live_update = HAS_IPYTHON and self.notebook_liveview
+
+            if do_live_update:
+                if self._lw is None:
+                    self._lw = {}
+                    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+                    ax.set_axis_off()
+                    self._lw['fig'] = fig
+                    self._lw['ax'] = ax
+                    self._lw['hd'] = display.display("", display_id=True)
+                    self._lw['sc'] = ax.scatter(
+                        z_mean.T[0],
+                        z_mean.T[1],
+                        **self.plot_kwargs
+                    )
+                else:
+                    self._lw['ax'].set_xlim(
+                        np.min(z_mean.T[0]), np.max(z_mean.T[0])
+                    )
+                    self._lw['ax'].set_ylim(
+                        np.min(z_mean.T[1]), np.max(z_mean.T[1])
+                    )
+                    self._lw['sc'].set_offsets(z_mean)
+
+                self._lw['hd'].update(self._lw['fig'])
+
+
     def on_train_end(self, *args):
         if self.h5f:
             self.h5f.close()
 
-    def saveLatentAnimation(self, dataset_file=None, plot_kwargs={},
-                            figsize=(8, 6), static=False, outdir='.',
+    def saveLatentAnimation(self, dataset_file=None,
+                            figsize=(8, 6), static=False, outdir=None,
                             fps=15, metadata={}):
+        if outdir is None:
+            outdir = self.out_dir
+
         if not os.path.isdir(outdir):
             os.makedirs(outdir)
 
@@ -634,15 +681,15 @@ class SaveLatentSpaceCallback(tf.keras.callbacks.Callback):
 
             if static:
                 for k in (pbar := tqdm(sorted(epoch_record.keys()))):
-                    pbar.set_description(f"Processing")
+                    pbar.set_description("Processing")
                     dataset_key = epoch_record[k]
                     dataset = h5f[dataset_key][()]
-                    ds_xmin, ds_ymin = dataset.min(axis=0)
-                    ds_xmax, ds_ymax = dataset.max(axis=0)
-                    xmin = ds_xmin if xmin is None else np.minimum(xmin, ds_xmin)
-                    ymin = ds_ymin if ymin is None else np.minimum(ymin, ds_ymin)
-                    xmax = ds_xmax if xmax is None else np.maximum(xmax, ds_xmax)
-                    ymax = ds_ymax if ymax is None else np.maximum(ymax, ds_ymax)
+                    dsxmin, dsymin = dataset.min(axis=0)
+                    dsxmax, dsymax = dataset.max(axis=0)
+                    xmin = dsxmin if xmin is None else np.minimum(xmin, dsxmin)
+                    ymin = dsymin if ymin is None else np.minimum(ymin, dsymin)
+                    xmax = dsxmax if xmax is None else np.maximum(xmax, dsxmax)
+                    ymax = dsymax if ymax is None else np.maximum(ymax, dsymax)
                 ax.set_xlim(xmin, xmax)
                 ax.set_ylim(ymin, ymax)
 
@@ -651,25 +698,26 @@ class SaveLatentSpaceCallback(tf.keras.callbacks.Callback):
                     sc_plot = None
 
                     for k in (pbar := tqdm(sorted(epoch_record.keys()))):
-                        pbar.set_description(f"Rendering")
+                        pbar.set_description("Rendering")
                         dataset_key = epoch_record[k]
                         dataset = h5f[dataset_key][()]
 
                         if not static:
-                            ds_xmin, ds_ymin = dataset.min(axis=0)
-                            ds_xmax, ds_ymax = dataset.max(axis=0)
-                            ax.set_xlim(ds_xmin, ds_xmax)
-                            ax.set_ylim(ds_ymin, ds_ymax)
+                            dsxmin, dsymin = dataset.min(axis=0)
+                            dsxmax, dsymax = dataset.max(axis=0)
+                            ax.set_xlim(dsxmin, dsxmax)
+                            ax.set_ylim(dsymin, dsymax)
 
                         if sc_plot is None:
                             sc_plot = ax.scatter(
                                 dataset.T[0],
                                 dataset.T[1],
-                                **plot_kwargs
+                                **self.plot_kwargs
                             )
                         else:
                             sc_plot.set_offsets(dataset)
                         writer.grab_frame()
+
             except (Exception, KeyboardInterrupt):
                 print("Aborted")
             plt.close(fig)

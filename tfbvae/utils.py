@@ -7,8 +7,11 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
+from mpl_toolkits.mplot3d import Axes3D
+
 from scipy.stats import median_abs_deviation
 from scipy.signal import savgol_filter
+from scipy.signal.windows import general_gaussian
 from astropy.table import Table
 
 import seaborn as sns
@@ -21,6 +24,62 @@ import tensorflow as tf
 
 tf.get_logger().setLevel('WARNING')
 tf.autograph.set_verbosity(2)
+
+
+def smoothFFT(flux, m=1, sigma=25, axis=-1, mask=None):
+    flux = np.copy(flux)
+    if mask is None:
+        mask = np.zeros_like(flux, dtype=bool)
+    mask |= ~np.isfinite(flux)
+
+    if len(flux.shape) > 1:
+        for j in range(flux.shape[0]):
+            flux[j, mask[j]] = np.interp(
+                np.flatnonzero(mask[j]),
+                np.flatnonzero(~mask[j]),
+                flux[j, ~mask[j]]
+            )
+    else:
+        flux[mask] = np.interp(
+            np.flatnonzero(mask),
+            np.flatnonzero(~mask),
+            flux[~mask]
+        )
+
+    XX = np.hstack((flux, np.flip(flux, axis=-1)))
+    win = np.roll(general_gaussian(XX.shape[-1], m, sigma), XX.shape[-1]//2)
+    fXX = np.fft.fft(XX, axis=-1)
+    XXf = np.real(np.fft.ifft(fXX*win))[..., :flux.shape[-1]]
+    XXf[mask] = np.nan
+    return XXf
+
+
+def separateContinuum(flux, m=1, sigma=10, mask=None):
+    continuum = smoothFFT(flux, m, sigma, mask=mask)
+    lines = flux - continuum
+    return continuum, lines
+
+
+def getNormedHist(data, n_nins=200, axis=-1):
+    mask = np.isnan(data)
+
+    medianf = np.median(data[~mask], axis=-1)
+    registered = data - medianf
+    maxf = np.max(np.abs(registered[~mask]), axis=-1)
+    data = registered / maxf
+
+    data = np.clip(data, -1, 1)
+    bins = np.linspace(-1, 1, n_nins)
+
+    if len(data.shape) > 1:
+        hist = np.apply_along_axis(
+            lambda x: np.histogram(x, bins)[0],
+            axis=-1,
+            arr=data
+        )
+        return (hist, bins)
+    else:
+        return np.histogram(data, bins)
 
 
 ##############################################
@@ -135,12 +194,14 @@ def plotScatterDensity2d(points_x, points_y, probs=None, cmap='bone_r',
     return fig, ax
 
 
-def plotScatterAux2d(points_x, points_y, aux, probs=None, cmap='jet',
-                    x_label=None, y_label=None, aux_label=None,
-                    color_norm=plt.Normalize, figsize=(10, 10),
-                    sort=False, ax=None, **kargs):
+def plotScatterAux(points_x, points_y, aux, points_z=None, probs=None,
+                   cmap='jet', x_label=None, y_label=None, z_label=None,
+                   aux_label=None, color_norm=plt.Normalize,
+                   figsize=(10, 10), sort=False, ax=None, **kargs):
     points_x = np.array(points_x)
     points_y = np.array(points_y)
+    points_z = None if points_z is None else np.array(points_z)
+
     aux = np.array(aux)
     plot_args = {
         's': 10,
@@ -151,7 +212,10 @@ def plotScatterAux2d(points_x, points_y, aux, probs=None, cmap='jet',
 
     if ax is None:
         fig = plt.figure(figsize=figsize, tight_layout=True)
-        ax = fig.add_subplot(111)
+        if points_z is None:
+            ax = fig.add_subplot(111)
+        else:
+            ax = Axes3D(fig)
     else:
         fig = ax.figure
 
@@ -179,13 +243,23 @@ def plotScatterAux2d(points_x, points_y, aux, probs=None, cmap='jet',
     else:
         idx_x = list(range(len(aux)))
 
-    ax.scatter(
-        points_x[idx_x],
-        points_y[idx_x],
-        c=aux[idx_x],
-        cmap=cmap,
-        **plot_args,
-    )
+    if points_z is None:
+        ax.scatter(
+            points_x[idx_x],
+            points_y[idx_x],
+            c=aux[idx_x],
+            cmap=cmap,
+            **plot_args,
+        )
+    else:
+        ax.scatter(
+            points_x[idx_x],
+            points_y[idx_x],
+            points_z[idx_x],
+            c=aux[idx_x],
+            cmap=cmap,
+            **plot_args,
+        )
     return fig, ax
 
 
