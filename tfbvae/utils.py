@@ -144,7 +144,7 @@ def get_normed_hist(
     """
     medianf = np.nanmedian(data, axis=axis)
     registered = (data.T - medianf)
-    maxf = np.nanmax(np.abs(registered), axis=1 - axis)
+    maxf = np.nanmax(np.abs(registered), axis=1 + axis)
     data = (registered / maxf).T
 
     data = np.clip(data, -1, 1)

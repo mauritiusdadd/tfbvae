@@ -162,7 +162,7 @@ def get_test_encoder_cnn(
         n: int,
         l1: typing.Optional[float] = None,
         l2: typing.Optional[float] = None
-) -> typing.List[typing.Union[layers.Layers, ...]]:
+) -> typing.List[typing.Union[layers.Layer, ...]]:
     """
     Returns a simple CNN encoder layer
 
@@ -223,7 +223,7 @@ def get_test_decoder_cnn(
         n: int,
         l1: typing.Optional[float] = None,
         l2: typing.Optional[float] = None
-) -> typing.List[typing.Union[layers.Layers, ...]]:
+) -> typing.List[typing.Union[layers.Layer, ...]]:
     """
     Returns a simple CNN decoder layer
 
@@ -332,9 +332,9 @@ class BetaVariationalAutoencoder(tf.keras.Model):
 
     def __init__(
             self,
-            encoder_layers: typing.List[layers.Layer, ...],
-            decoder_layers: typing.List[layers.Layer, ...],
-            input_shape: typing.Union[typing.List[int, ...], np.array],
+            encoder_layers: typing.List[layers.Layer],
+            decoder_layers: typing.List[layers.Layer],
+            input_shape: typing.Union[typing.List[int], np.array],
             latent_dim: int = 2,
             beta: float = 0.7,
             verbose: bool = False,
