@@ -7,6 +7,7 @@ Created on Sun Dec 12 10:19:58 2021
 """
 import os
 import time
+import typing
 import datetime
 import threading
 from pathlib import Path
@@ -34,7 +35,7 @@ else:
 _do_update_lock = threading.Condition()
 _last_update = 0
 
-def getAvailableGpus():
+def get_available_gpus():
     local_device_protos = device_lib.list_local_devices()
     return [x.name for x in local_device_protos if x.device_type == 'GPU']
 
@@ -42,7 +43,11 @@ def getAvailableGpus():
 # An eye candy for showing training progress #
 ##############################################
 
-def printBar(partial, total=None, wid=32):
+def print_bar(
+    partial: float,
+    total: typing.Optional[float] = None,
+    wid: int = 32
+) -> str:
     """
     Returns a nice text/unicode progress bar showing
     partial and total progress
@@ -84,10 +89,10 @@ class BasicPBarCallback(tf.keras.callbacks.Callback):
     Keras callback that shows train progress as a nice progress bar
     """
     TRAIN_HDR_FMT = 'Epoch   Partial/Total Progress            Steps/Total'\
-              '   {0:s}     ETA'
+                    '   {0:s}     ETA'
 
     PREDICT_HDR_FMT = '        Progress            Steps/Total'\
-              '   {0:s}     ETA'
+                      '   {0:s}     ETA'
 
     TRAIN_BAR_FMT = '\r{0: 5d}  {3: <32s}  {1: 6d}/{2: 6d}  {4}  {5:<10s}'
     PREDICT_BAR_FMT = '\r       {3: <32s}  {1: 6d}/{2: 6d}  {4}  {5:<10s}'
@@ -121,12 +126,12 @@ class BasicPBarCallback(tf.keras.callbacks.Callback):
             self._eta = str(datetime.timedelta(seconds=int(t_remaining)))
 
         if self.params['steps'] == 0:
-            pbar_full = printBar(
+            pbar_full = print_bar(
                 0,
                 self.curr_epoch/self.params['epochs']
             )
         else:
-            pbar_full = printBar(
+            pbar_full = print_bar(
                 (batch+1)/self.params['steps'],
                 self.curr_epoch/self.params['epochs']
             )
@@ -306,12 +311,12 @@ class AdvancedPBarCallback(tf.keras.callbacks.Callback):
             self._eta = str(datetime.timedelta(seconds=int(t_remaining)))
 
         if self.params['steps'] == 0:
-            pbar_full = printBar(
+            pbar_full = print_bar(
                 0,
                 self.curr_epoch/self.params['epochs']
             )
         else:
-            pbar_full = printBar(
+            pbar_full = print_bar(
                 (batch+1)/self.params['steps'],
                 self.curr_epoch/self.params['epochs']
             )
@@ -344,9 +349,9 @@ class AdvancedPBarCallback(tf.keras.callbacks.Callback):
         metrics_header = self._get_metrics_header()
 
         if self.params['steps'] == 0:
-            pbar_full = printBar(0)
+            pbar_full = print_bar(0)
         else:
-            pbar_full = printBar((batch+1)/self.params['steps'])
+            pbar_full = print_bar((batch+1)/self.params['steps'])
         loss_str = self._get_loss_str(logs)
         pbar = self.PREDICT_BAR_FMT.format(
             batch+1,
@@ -403,7 +408,7 @@ class AdvancedPBarCallback(tf.keras.callbacks.Callback):
             for m in self.show_metrics
         ])
 
-        pbar_full = printBar(
+        pbar_full = print_bar(
             self.params['steps']/self.params['steps'],
             self.params['epochs']/self.params['epochs']
         )

@@ -15,11 +15,10 @@ __maintainer__ = "Maurizio D'Addona"
 __email__ = "mauritiusdadd@gmail.com"
 __status__ = "Prototype"
 
-
 import os
 import sys
 import time
-import datetime
+import typing
 import concurrent.futures
 
 import numpy as np
@@ -56,19 +55,23 @@ class Sampling(layers.Layer):
         dim = tf.shape(z_mean)[1]
         epsilon = tf.keras.backend.random_normal(
             shape=(batch, dim),
-            mean = self._mu,
-            stddev = self._std
+            mean=self._mu,
+            stddev=self._std
         )
         return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
 
-def getTestEncoder(N, l1=None, l2=None):
+def get_test_encoder(
+        n: int,
+        l1: typing.Optional[float] = None,
+        l2: typing.Optional[float] = None
+) -> typing.List[layers.Dense]:
     """
     Returns a simple encoder layer
 
     Parameters
     ----------
-    N : integer
+    n : integer
         Regulates the number of neurons in eache layer:
             - The first layer will have 2*N neurons
             - The second layer will have N + 1 neurons
@@ -79,13 +82,13 @@ def getTestEncoder(N, l1=None, l2=None):
 
     Returns
     -------
-    enc_layers : list
-        List of layers representing the encoder.
+    enc_layers : tuple
+        A tuple of layers representing the encoder.
 
     """
     enc_layers = [
         layers.Dense(
-            2*N,
+            2 * n,
             activation="relu",
             name="enc_layer_1",
             kernel_regularizer=regularizers.l1_l2(l1=l1, l2=l2),
@@ -93,7 +96,7 @@ def getTestEncoder(N, l1=None, l2=None):
             activity_regularizer=regularizers.l1_l2(l1=l1, l2=l2)
         ),
         layers.Dense(
-            N + 1,
+            n + 1,
             activation="relu",
             name="enc_layer_2",
             kernel_regularizer=regularizers.l1_l2(l1=l1, l2=l2),
@@ -104,13 +107,17 @@ def getTestEncoder(N, l1=None, l2=None):
     return enc_layers
 
 
-def getTestDecoder(N, l1=None, l2=None):
+def get_test_decoder(
+        n: int,
+        l1: typing.Optional[float] = None,
+        l2: typing.Optional[float] = None
+) -> typing.List[layers.Dense]:
     """
-    Returns a simple encoder layer
+    Returns a simple encoder layer.
 
     Parameters
     ----------
-    N : integer
+    n : integer
         Regulates the number of neurons in eache layer:
             - The first layer will have N + 1 neurons
             - The second layer will have 2*N neurons
@@ -121,13 +128,13 @@ def getTestDecoder(N, l1=None, l2=None):
 
     Returns
     -------
-    dec_layers : list
-        List of layers representing the decoder.
+    dec_layers : tuple
+        Tuple of layers representing the decoder.
 
     """
     dec_layers = [
         layers.Dense(
-            N + 1,
+            n + 1,
             activation="relu",
             name="dec_layer_1",
             kernel_regularizer=regularizers.l1_l2(l1=l1, l2=l2),
@@ -135,7 +142,7 @@ def getTestDecoder(N, l1=None, l2=None):
             activity_regularizer=regularizers.l1_l2(l1=l1, l2=l2)
         ),
         layers.Dense(
-            2*N,
+            2 * n,
             activation="relu",
             name="dec_layer_2",
             kernel_regularizer=regularizers.l1_l2(l1=l1, l2=l2),
@@ -143,7 +150,7 @@ def getTestDecoder(N, l1=None, l2=None):
             activity_regularizer=regularizers.l1_l2(l1=l1, l2=l2)
         ),
         layers.Dense(
-            N,
+            n,
             activation=None,
             name="dec_layer_3",
         )
@@ -151,13 +158,17 @@ def getTestDecoder(N, l1=None, l2=None):
     return dec_layers
 
 
-def getTestEncoderCNN(N, l1, l2):
+def get_test_encoder_cnn(
+        n: int,
+        l1: typing.Optional[float] = None,
+        l2: typing.Optional[float] = None
+) -> typing.List[typing.Union[layers.Layers, ...]]:
     """
     Returns a simple CNN encoder layer
 
     Parameters
     ----------
-    N : integer
+    n : integer
         Regulates the number of neurons in the fully connected section:
             - The first layer will have 2*N neurons
             - The second layer will have N + 1 neurons
@@ -189,7 +200,7 @@ def getTestEncoderCNN(N, l1, l2):
         ),
         layers.Flatten(),
         layers.Dense(
-            2*N,
+            2 * n,
             activation="relu",
             name='cnn_enc_layer_3',
             kernel_regularizer=regularizers.l1_l2(l1=l1, l2=l2),
@@ -197,7 +208,7 @@ def getTestEncoderCNN(N, l1, l2):
             activity_regularizer=regularizers.l1_l2(l1=l1, l2=l2)
         ),
         layers.Dense(
-            N + 1,
+            n + 1,
             activation="relu",
             name='cnn_enc_layer_4',
             kernel_regularizer=regularizers.l1_l2(l1=l1, l2=l2),
@@ -208,13 +219,17 @@ def getTestEncoderCNN(N, l1, l2):
     return enc_layers
 
 
-def getTestDecoderCNN(N, l1, l2):
+def get_test_decoder_cnn(
+        n: int,
+        l1: typing.Optional[float] = None,
+        l2: typing.Optional[float] = None
+) -> typing.List[typing.Union[layers.Layers, ...]]:
     """
     Returns a simple CNN decoder layer
 
     Parameters
     ----------
-    N : integer
+    n : integer
         Regulates the size of output image that will be N x N.
         For MNIST data use N=28
     l1 : float, optional
@@ -228,16 +243,16 @@ def getTestDecoderCNN(N, l1, l2):
         List of layers representing the decoder.
 
     """
-    N = int(N/4)
+    n = int(n / 4)
 
     dec_layers = [
         layers.Dense(
-            units=(N)*(N)*32,
+            units=n * n * 32,
             activation=tf.nn.relu,
             name='cnn_dec_layer_1'
         ),
         layers.Reshape(
-            target_shape=(N, N, 32),
+            target_shape=(n, n, 32),
             name='cnn_dec_layer_2'
         ),
         layers.Conv2DTranspose(
@@ -265,6 +280,7 @@ def getTestDecoderCNN(N, l1, l2):
         ),
     ]
     return dec_layers
+
 
 class BetaVariationalAutoencoder(tf.keras.Model):
     """
@@ -314,9 +330,16 @@ class BetaVariationalAutoencoder(tf.keras.Model):
         "cosine": tfutils.tf_pdist_cosine,
     }
 
-    def __init__(self, encoder_layers, decoder_layers,
-                 input_shape, latent_dim=2,
-                 beta=0.7, verbose=False, flatten_input=False):
+    def __init__(
+            self,
+            encoder_layers: typing.List[layers.Layer, ...],
+            decoder_layers: typing.List[layers.Layer, ...],
+            input_shape: typing.Union[typing.List[int, ...], np.array],
+            latent_dim: int = 2,
+            beta: float = 0.7,
+            verbose: bool = False,
+            flatten_input: bool = False
+    ):
         """
         Parameters
         ----------
@@ -418,17 +441,30 @@ class BetaVariationalAutoencoder(tf.keras.Model):
             self.encoder.summary()
             self.decoder.summary()
 
-    def summary(self):
+    def summary(self) -> None:
+        """
+        Get the summaries of the encoder and the decoder.
+
+        Returns
+        -------
+        None
+        """
         self.encoder.summary()
         self.decoder.summary()
 
-    def call(self, inputs):
+    def call(
+            self,
+            inputs: typing.Union[tf.data.Dataset, np.array]
+    ) -> np.array:
         z_mean, z_log_var, z = self.encoder(inputs, training=False)
         decoder_out = self.decoder(z, training=False)
         return decoder_out
 
     @tf.function
-    def train_step(self, data):
+    def train_step(
+            self,
+            data: typing.Union[tf.data.Dataset, np.array]
+    ) -> typing.Dict[str, typing.Union[tf.Tensor, np.array, float]]:
         """
         This function is called within fit() method.
 
@@ -460,7 +496,8 @@ class BetaVariationalAutoencoder(tf.keras.Model):
             kl_loss = (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
             kl_loss = -0.5 * tf.reduce_sum(kl_loss, axis=1)
 
-            total_loss = 2*((1 - self._beta)*rec_loss + self._beta*kl_loss)
+            total_loss = 2 * (
+                        (1 - self._beta) * rec_loss + self._beta * kl_loss)
             total_loss += sum(self.losses)
 
         grads = tape.gradient(total_loss, self.trainable_weights)
@@ -515,7 +552,7 @@ class BetaVariationalAutoencoder(tf.keras.Model):
         kl_loss = (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
         kl_loss = -0.5 * tf.reduce_sum(kl_loss, axis=1)
 
-        total_loss = 2*((1 - self._beta)*rec_loss + self._beta*kl_loss)
+        total_loss = 2 * ((1 - self._beta) * rec_loss + self._beta * kl_loss)
         total_loss += sum(self.losses)
 
         self.total_loss_tracker.update_state(total_loss)
@@ -560,7 +597,7 @@ class BetaVariationalAutoencoder(tf.keras.Model):
         return z_mean, z_log_var, z
 
 
-def plotHistory(history):
+def plot_history(history):
     """
     Plot the train history
 
@@ -575,7 +612,7 @@ def plotHistory(history):
         Figure object of the plot.
 
     """
-    fig, ax = plt.subplots(1, 1, figsize=(10,8))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
     ax.plot(history.history['loss'], label='training loss')
     ax.plot(history.history['rec_loss'], label='reconstruction loss')
     ax.plot(history.history['kl_loss'], label='kl loss')
@@ -585,7 +622,7 @@ def plotHistory(history):
     return fig
 
 
-def plotLabelClusters(data, labels, title="", cmap='tab10'):
+def plot_label_clusters(data, labels, title="", cmap='tab10'):
     """
     Make a scatter with points colormapperd according to their
     respective labels.
@@ -621,7 +658,7 @@ def plotLabelClusters(data, labels, title="", cmap='tab10'):
     cluster_colors = np.array([palette[col] for col in labels])
 
     for c in target_labels:
-        label_mask = labels==c
+        label_mask = labels == c
 
         ax.scatter(
             z_x[label_mask],
@@ -654,7 +691,7 @@ def gen_latent_tiles(vae, n=64, scale=3.0):
     grid_coord[..., 0] = xv
     grid_coord[..., 1] = yv
 
-    z_sample = grid_coord.reshape((n*n, 2))
+    z_sample = grid_coord.reshape((n * n, 2))
 
     x_decoded = vae.decoder.predict(z_sample, batch_size=128)
     x_decoded = np.mean(x_decoded, axis=-1)
@@ -663,8 +700,8 @@ def gen_latent_tiles(vae, n=64, scale=3.0):
     return tiles, grid_coord
 
 
-def plotLatentSpaceFromTiles(tiles, grid_coord,
-                                 figsize=25, cmap="Greys_r",title=""):
+def plot_latent_space_from_tiles(tiles, grid_coord,
+                                 figsize=25, cmap="Greys_r", title=""):
     fig, ax = plt.subplots(1, 1, figsize=(figsize, figsize))
 
     tile_x_size = tiles.shape[2]
@@ -681,7 +718,7 @@ def plotLatentSpaceFromTiles(tiles, grid_coord,
     pixel_range_y = np.arange(start_y_range, end_y_range, tile_y_size)
 
     sample_range_x = np.round(grid_coord[:, 0, 0], 1)
-    sample_range_y = np.round(grid_coord[: ,1, 1], 1)
+    sample_range_y = np.round(grid_coord[:, 1, 1], 1)
 
     ax.set_xticks(pixel_range_x, sample_range_x)
     ax.set_yticks(pixel_range_y, sample_range_y)
@@ -694,12 +731,11 @@ def plotLatentSpaceFromTiles(tiles, grid_coord,
     return fig
 
 
-def plotLatentSpace(vae, n=64, figsize=25, scale=3.0,
-                      cmap="Greys_r",title=""):
-
+def plot_latent_space(vae, n=64, figsize=25, scale=3.0,
+                      cmap="Greys_r", title=""):
     tiles, grid = gen_latent_tiles(vae, n, scale)
 
-    return plotLatentSpaceFromTiles(
+    return plot_latent_space_from_tiles(
         tiles,
         grid,
         figsize,
@@ -711,9 +747,8 @@ def plotLatentSpace(vae, n=64, figsize=25, scale=3.0,
 def test_bvae(data, labels, experiment_name="Unknown",
               epochs=500, batch_size=128, beta=1, device=None,
               pb_callback_row=0, pb_callback_title=""):
-
     test_params = {
-        'expertiment_name': experiment_name,
+        'experiment_name': experiment_name,
         'beta': beta,
         'device': str(device),
         'epochs': epochs,
@@ -724,8 +759,8 @@ def test_bvae(data, labels, experiment_name="Unknown",
     with tf.device(device):
         print("Building vae model...")
         autoencoder = BetaVariationalAutoencoder(
-            getTestEncoderCNN(32, l1=1e-5, l2=1e-4,),
-            getTestDecoderCNN(data.shape[1], l1=1e-5, l2=1e-4,),
+            get_test_encoder_cnn(32, l1=1e-5, l2=1e-4, ),
+            get_test_decoder_cnn(data.shape[1], l1=1e-5, l2=1e-4, ),
             input_shape=data.shape[1:],
             latent_dim=2,
             beta=beta,
@@ -765,7 +800,6 @@ def test_bvae(data, labels, experiment_name="Unknown",
             callbacks=[callback_es, callback_pb],
             verbose=0,
         )
-
 
         print("Testing model")
         eval_results = autoencoder.evaluate(
@@ -828,7 +862,7 @@ def test_mnist():
     jobs = generate_jobs(
         datasets,
         [0.3, 0.5, 0.9],
-        epochs = 10
+        epochs=10
     )
 
     if not os.path.isdir(TEST_OUT_DIR):
@@ -852,8 +886,8 @@ def test_mnist():
                         # NOTE: matplotlib is not thread safe so plotting must
                         #       be done here in the main thread!
 
-                        fig = plotHistory(history)
-                        fig_name = str(job_params['expertiment_name'])
+                        fig = plot_history(history)
+                        fig_name = str(job_params['experiment_name'])
                         fig_name += f"_history_{job_params['beta']}.jpg"
                         plt.savefig(
                             os.path.join(TEST_OUT_DIR, fig_name),
@@ -861,16 +895,16 @@ def test_mnist():
                         )
                         plt.close(fig)
 
-                        fig_title = str(job_params['expertiment_name'])
+                        fig_title = str(job_params['experiment_name'])
                         fig_title += f" (beta={job_params['beta']:.2f})"
 
-                        fig = plotLabelClusters(
+                        fig = plot_label_clusters(
                             pred,
                             job_params['labels'],
                             title=fig_title
                         )
 
-                        fig_name = str(job_params['expertiment_name'])
+                        fig_name = str(job_params['experiment_name'])
                         fig_name += f"_latentspace_{job_params['beta']}.jpg"
                         plt.savefig(
                             os.path.join(TEST_OUT_DIR, fig_name),
@@ -878,8 +912,8 @@ def test_mnist():
                         )
                         plt.close(fig)
 
-                        fig = plotLatentSpaceFromTiles(tiles[0], tiles[1])
-                        fig_name = str(job_params['expertiment_name'])
+                        fig = plot_latent_space_from_tiles(tiles[0], tiles[1])
+                        fig_name = str(job_params['experiment_name'])
                         fig_name += f"_tiles_{job_params['beta']}.jpg"
                         plt.savefig(
                             os.path.join(TEST_OUT_DIR, fig_name),
@@ -921,9 +955,9 @@ def test_mnist():
                 sys.exit()
 
 
-
 def test():
     test_mnist()
+
 
 if __name__ == '__main__':
     test()

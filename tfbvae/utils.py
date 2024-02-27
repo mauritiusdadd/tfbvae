@@ -1,15 +1,12 @@
 
 import sys
-import itertools
+import typing
 
 import numpy as np
 
-from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-
 from mpl_toolkits.mplot3d import Axes3D
 
-from scipy.stats import median_abs_deviation
 from scipy.signal import savgol_filter
 from scipy.signal.windows import general_gaussian
 from astropy.table import Table
@@ -18,7 +15,6 @@ import seaborn as sns
 import pandas as pd
 
 from matplotlib.cm import ScalarMappable
-import matplotlib.patches as mpatches
 
 import tensorflow as tf
 
@@ -26,46 +22,129 @@ tf.get_logger().setLevel('WARNING')
 tf.autograph.set_verbosity(2)
 
 
-def smoothFFT(flux, m=1, sigma=25, axis=-1, mask=None):
-    flux = np.copy(flux)
-    if mask is None:
-        mask = np.zeros_like(flux, dtype=bool)
-    mask |= ~np.isfinite(flux)
+def smooth_fft(
+    data: np.array,
+    m: float = 1.0,
+    sigma: float = 25.0,
+    axis: int = -1,
+    mask: typing.Optional[np.array] = None
+) -> np.array:
+    """
+    Return a smoothed version of an array.
 
-    if len(flux.shape) > 1:
-        for j in range(flux.shape[0]):
-            flux[j, mask[j]] = np.interp(
+    Parameters
+    ----------
+    data : numpy.array
+        The input array to be smoothed.
+    m : float, optional
+        parameter to be passed to the function general_gaussian().
+        The default value is 1.0.
+    sigma : float, optional
+        Parameter to be passed to the function general_gaussian().
+        The default value is 25.0.
+    axis : int, optional
+        The axis along with perform the smoothing. The default value is -1.
+    mask : numpy.array, optional
+        An optional array containing a boolean mask of values that should be
+        masked during the smoothing process, were a True means that the
+        corresponding value in the input array is masked.
+    Returns
+    -------
+    numpy.array
+        The smoothed array.
+    """
+    data = np.copy(data)
+    if mask is None:
+        mask = np.zeros_like(data, dtype=bool)
+    mask |= ~np.isfinite(data)
+
+    if len(data.shape) > 1:
+        for j in range(data.shape[0]):
+            data[j, mask[j]] = np.interp(
                 np.flatnonzero(mask[j]),
                 np.flatnonzero(~mask[j]),
-                flux[j, ~mask[j]]
+                data[j, ~mask[j]]
             )
     else:
-        flux[mask] = np.interp(
+        data[mask] = np.interp(
             np.flatnonzero(mask),
             np.flatnonzero(~mask),
-            flux[~mask]
+            data[~mask]
         )
 
-    XX = np.hstack((flux, np.flip(flux, axis=-1)))
-    win = np.roll(general_gaussian(XX.shape[-1], m, sigma), XX.shape[-1]//2)
-    fXX = np.fft.fft(XX, axis=-1)
-    XXf = np.real(np.fft.ifft(fXX*win))[..., :flux.shape[-1]]
-    XXf[mask] = np.nan
-    return XXf
+    xx = np.hstack((data, np.flip(data, axis=axis)))
+    win = np.roll(
+        general_gaussian(xx.shape[axis], m, sigma),
+        xx.shape[axis]//2
+    )
+    fxx = np.fft.fft(xx, axis=axis)
+    xxf = np.real(np.fft.ifft(fxx*win))[..., :data.shape[axis]]
+    xxf[mask] = np.nan
+    return xxf
 
 
-def separateContinuum(flux, m=1, sigma=10, mask=None):
-    continuum = smoothFFT(flux, m, sigma, mask=mask)
-    lines = flux - continuum
-    return continuum, lines
+def separate_continuum(
+    data: np.array,
+    m: float = 1.0,
+    sigma: float = 10.0,
+    mask: typing.Optional[np.array] = None
+) -> typing.Tuple[np.array, np.array]:
+    """
+    Split a numpy array in a smoothed continuum and a residual.
+
+    Parameters
+    ----------
+    data : numpy.array
+        The input array to be smoothed.
+    m : float, optional
+        parameter to be passed to the function general_gaussian().
+        The default value is 1.0.
+    sigma : float, optional
+        Parameter to be passed to the function general_gaussian().
+        The default value is 25.0.
+    axis : int, optional
+        The axis along with perform the smoothing. The default value is -1.
+    mask : numpy.array, optional
+        An optional array containing a boolean mask of values that should be
+        masked during the smoothing process, were a True means that the
+        corresponding value in the input array is masked.
+
+    Returns
+    -------
+    continuum : np.array
+    residuals : np.array
+    """
+    continuum = smooth_fft(data, m, sigma, mask=mask)
+    residuals = data - continuum
+    return continuum, residuals
 
 
-def getNormedHist(data, n_bins=200, axis=-1):
-    mask = np.isnan(data)
+def get_normed_hist(
+    data: np.array,
+    n_bins: int = 200,
+    axis: int = -1
+) -> typing.Tuple[np.array, np.array]:
+    """
+    Compute the histogram of a dataset after normalizing it.
+    Parameters
+    ----------
+    data : numpy.array
+        The input array
+    n_bins : int, optional
+        Number of bins in the histogram. The default value is 200.
+    axis : int, optional
+        Axis along with compute the histograms. The default value is -1.
 
-    medianf = np.nanmedian(data, axis=-1)
+    Returns
+    -------
+    histogram: numpy.array
+        The histogram
+    bin_edges: numpy.array
+        The bin edges.
+    """
+    medianf = np.nanmedian(data, axis=axis)
     registered = (data.T - medianf)
-    maxf = np.nanmax(np.abs(registered), axis=0)
+    maxf = np.nanmax(np.abs(registered), axis=1 - axis)
     data = (registered / maxf).T
 
     data = np.clip(data, -1, 1)
@@ -74,10 +153,10 @@ def getNormedHist(data, n_bins=200, axis=-1):
     if len(data.shape) > 1:
         hist = np.apply_along_axis(
             lambda x: np.histogram(x, bins)[0],
-            axis=-1,
+            axis=axis,
             arr=data
         )
-        return ((hist.T / np.max(hist, axis=-1)).T, bins)
+        return (hist.T / np.max(hist, axis=axis)).T, bins
     else:
         return np.histogram(data, bins)
 
@@ -86,7 +165,7 @@ def getNormedHist(data, n_bins=200, axis=-1):
 #   Convenient functions for plotting data   #
 ##############################################
 
-def plotConfusionMatrix(true_labels, predicted_labels, margins=False,
+def plot_confusion_matrix(true_labels, predicted_labels, margins=False,
                         normalize=False, fmt=None, actual_label=["True Label"],
                         predicted_label=["Predicted Label"]):
     confusion_matrix = pd.crosstab(
@@ -113,7 +192,7 @@ def plotConfusionMatrix(true_labels, predicted_labels, margins=False,
     )
 
 
-def scatterDensity2d(poits_x, points_y, nbins=50):
+def scatter_density_2d(poits_x, points_y, nbins=50):
     hh, locx, locy = np.histogram2d(poits_x, points_y, bins=[nbins, nbins])
     color_val = np.array(
         [
@@ -128,7 +207,7 @@ def scatterDensity2d(poits_x, points_y, nbins=50):
     return color_val_x, idx_x
 
 
-def plotScatterDensity2d(points_x, points_y, probs=None, cmap='bone_r',
+def plotscatter_density_2d(points_x, points_y, probs=None, cmap='bone_r',
                          density_mode='cmap', density_alpha_mode='normal',
                          density_color_mode='normal', color='',
                          x_label=None, y_label=None, figsize=(10, 10),
@@ -149,7 +228,7 @@ def plotScatterDensity2d(points_x, points_y, probs=None, cmap='bone_r',
         fig = None
 
     if len(points_x) > 0:
-        density, ixd = scatterDensity2d(points_x, points_y, nbins=nbins)
+        density, ixd = scatter_density_2d(points_x, points_y, nbins=nbins)
     else:
         return fig, ax
     if log_density:
@@ -194,7 +273,7 @@ def plotScatterDensity2d(points_x, points_y, probs=None, cmap='bone_r',
     return fig, ax
 
 
-def plotScatterAux(points_x, points_y, aux, points_z=None, probs=None,
+def plot_scatter_aux(points_x, points_y, aux, points_z=None, probs=None,
                    cmap='jet', x_label=None, y_label=None, z_label=None,
                    aux_label=None, color_norm=plt.Normalize,
                    figsize=(10, 10), sort=False, ax=None, **kargs):
@@ -263,7 +342,7 @@ def plotScatterAux(points_x, points_y, aux, points_z=None, probs=None,
     return fig, ax
 
 
-def plotScatterCluster2d(points_x, points_y, labels, probs=None, cmap='tab10',
+def plot_ccatter_cluster_2d(points_x, points_y, labels, probs=None, cmap='tab10',
                          x_label=None, y_label=None, figsize=(10, 10),
                          cluster_labels={-1: 'Noise',}, density_bins=200,
                          log_density=False, outlier_ids=[-1], ax=None,
@@ -281,7 +360,7 @@ def plotScatterCluster2d(points_x, points_y, labels, probs=None, cmap='tab10',
     palette = sns.color_palette(cmap, len(clusters))
 
     if density_bins is not None:
-        density, sort_idx = scatterDensity2d(
+        density, sort_idx = scatter_density_2d(
             points_x,
             points_y,
             density_bins
@@ -359,7 +438,7 @@ def plotScatterCluster2d(points_x, points_y, labels, probs=None, cmap='tab10',
     return fig, ax
 
 
-def plotImputed(data, imputed_data, ft_1, ft_2, nan_vals=[-99],
+def plo_imputed(data, imputed_data, ft_1, ft_2, nan_vals=[-99],
                  common_missing_data=False,figsize=(10, 12), ax=None):
 
     if isinstance(data, Table):
@@ -397,7 +476,7 @@ def plotImputed(data, imputed_data, ft_1, ft_2, nan_vals=[-99],
     x_label = f'{ft_1}'
     y_label = f'{ft_2}'
 
-    fig, ax = plotScatterDensity2d(
+    fig, ax = plotscatter_density_2d(
         imputed_data[ft_1][nonans_mask],
         imputed_data[ft_2][nonans_mask],
         figsize=figsize,
@@ -412,7 +491,7 @@ def plotImputed(data, imputed_data, ft_1, ft_2, nan_vals=[-99],
         ax=ax,
     )
 
-    _ = plotScatterDensity2d(
+    _ = plotscatter_density_2d(
         imputed_data[ft_1][ft_1_mask],
         imputed_data[ft_2][ft_1_mask],
         density_mode='alpha',
@@ -424,7 +503,7 @@ def plotImputed(data, imputed_data, ft_1, ft_2, nan_vals=[-99],
         ax=ax
     )
 
-    _ = plotScatterDensity2d(
+    _ = plotscatter_density_2d(
         imputed_data[ft_1][ft_2_mask],
         imputed_data[ft_2][ft_2_mask],
         density_mode='alpha',
@@ -437,7 +516,7 @@ def plotImputed(data, imputed_data, ft_1, ft_2, nan_vals=[-99],
     )
 
     if common_missing_data:
-        _ = plotScatterDensity2d(
+        _ = plotscatter_density_2d(
             imputed_data[ft_1][common_mask],
             imputed_data[ft_2][common_mask],
             density_mode='alpha',
@@ -511,276 +590,7 @@ def _plot_tmpax(ax, datax, datay, color, s=40):
     return buff_c
 
 
-def plotImputed2(data, imputed_data, ft_1, ft_2, nan_vals=[-99],
-                  common_missing_data=False, figsize=(10, 12)):
-
-    if isinstance(data, Table):
-        data = data.to_pandas()
-    else:
-        data = pd.DataFrame(data)
-
-    if isinstance(imputed_data, Table):
-        imputed_data = imputed_data.to_pandas()
-    else:
-        imputed_data = pd.DataFrame(imputed_data)
-
-    ft_1_nan_mask = np.zeros(data.shape[0], dtype=bool)
-    ft_2_nan_mask = np.zeros(data.shape[0], dtype=bool)
-    ft_1_imp_mask = np.zeros(data.shape[0], dtype=bool)
-    ft_2_imp_mask = np.zeros(data.shape[0], dtype=bool)
-    common_mask = np.ones(data.shape[0], dtype=bool)
-    nonans_mask = np.ones(data.shape[0], dtype=bool)
-
-    for nan_val in nan_vals:
-        ft_1_nan_mask |= data[ft_1] == nan_val
-        ft_2_nan_mask |= data[ft_2] == nan_val
-
-        ft_1_imp_mask |= imputed_data[ft_1] != nan_val
-        ft_2_imp_mask |= imputed_data[ft_2] != nan_val
-
-        for feature in list(data.columns):
-            nonans_mask &= data[feature] != nan_val
-
-    ft_1_mask = ft_1_nan_mask & ft_1_imp_mask
-    ft_2_mask = ft_2_nan_mask & ft_2_imp_mask
-
-    common_mask &= ft_1_mask & ft_2_mask
-
-    x_label = f'{ft_1}'
-    y_label = f'{ft_2}'
-
-    fig, ax = plt.subplots(figsize=figsize)
-
-    _, ax = plotScatterDensity2d(
-        imputed_data[ft_1][nonans_mask | ft_1_mask | ft_2_mask],
-        imputed_data[ft_2][nonans_mask | ft_1_mask | ft_2_mask],
-        x_label=x_label,
-        y_label=y_label,
-        density_mode='both',
-        density_alpha_mode='normal',
-        density_color_mode='normal',
-        cmap='bone',
-        s=15,
-        alpha=0.3,
-        ax=ax
-    )
-
-    ax.set_aspect('equal')
-    x_lim = ax.get_xlim()
-    y_lim = ax.get_ylim()
-
-    buff_1 = _plot_tmpax(
-        ax,
-        datax=imputed_data[ft_1][ft_1_mask],
-        datay=imputed_data[ft_2][ft_1_mask],
-        color='#0083ff',
-        s=40
-    )
-
-    buff_2 = _plot_tmpax(
-        ax,
-        datax=imputed_data[ft_1][ft_2_mask],
-        datay=imputed_data[ft_2][ft_2_mask],
-        color='#fc7a00',
-        s=40
-    )
-
-    legend_patches = [
-        mpatches.Patch(color='#717f9a', label='No missing data'),
-        mpatches.Patch(color='#0083ff', label=f'Imputed {ft_1}'),
-        mpatches.Patch(color='#fc7a00', label=f'Imputed {ft_2}'),
-    ]
-
-    if common_missing_data:
-        buff_c = _plot_tmpax(
-            ax,
-            datax=imputed_data[ft_1][common_mask],
-            datay=imputed_data[ft_2][common_mask],
-            color='red',
-            s=40
-        )
-        legend_patches.append(
-            mpatches.Patch(color='red', label=f'Imputed {ft_1} & {ft_2}')
-        )
-
-    extent = [x_lim[0], x_lim[1], y_lim[0], y_lim[1]]
-
-    blended = np.zeros_like(buff_1)
-    blended[..., 0] = np.minimum(buff_1[..., 0], buff_2[..., 0])
-    blended[..., 1] = np.minimum(buff_1[..., 1], buff_2[..., 1])
-    blended[..., 2] = np.minimum(buff_1[..., 2], buff_2[..., 2])
-    blended[..., 3] = np.minimum(buff_1[..., 3], buff_2[..., 3])
-
-    ax.imshow(buff_1, alpha=0.7, extent=extent, zorder=2)
-    ax.imshow(buff_2, alpha=0.7, extent=extent, zorder=3)
-    ax.imshow(blended, alpha=0.3, extent=extent, zorder=4)
-
-    if common_missing_data:
-        ax.imshow(buff_c, alpha=0.5, extent=extent, zorder=5)
-
-    ax.legend(
-        loc="lower left",
-        bbox_to_anchor=(0, 1.02, 1, 0.2),
-        handles=legend_patches,
-        mode="expand",
-        ncol=2,
-        borderaxespad=0
-    )
-
-    plt.tight_layout()
-    return fig, ax
-
-
-def plotImputed2Color(data, imputed_data, ft_1, ft_2, ft_3, nan_vals=[-99],
-                        common_missing_data=False, figsize=(10, 12),
-                        ft_colors=['#0083ff', '#fc7a00', '#7f00ff', 'red']):
-
-    if isinstance(data, Table):
-        data = data.to_pandas()
-    else:
-        data = pd.DataFrame(data)
-
-    if isinstance(imputed_data, Table):
-        imputed_data = imputed_data.to_pandas()
-    else:
-        imputed_data = pd.DataFrame(imputed_data)
-
-    ft_1_nan_mask = np.zeros(data.shape[0], dtype=bool)
-    ft_2_nan_mask = np.zeros(data.shape[0], dtype=bool)
-    ft_3_nan_mask = np.zeros(data.shape[0], dtype=bool)
-    ft_1_imp_mask = np.zeros(data.shape[0], dtype=bool)
-    ft_2_imp_mask = np.zeros(data.shape[0], dtype=bool)
-    ft_3_imp_mask = np.zeros(data.shape[0], dtype=bool)
-    common_mask = np.ones(data.shape[0], dtype=bool)
-    nonans_mask = np.ones(data.shape[0], dtype=bool)
-
-    for nan_val in nan_vals:
-        ft_1_nan_mask |= data[ft_1] == nan_val
-        ft_2_nan_mask |= data[ft_2] == nan_val
-        ft_3_nan_mask |= data[ft_3] == nan_val
-
-        ft_1_imp_mask |= imputed_data[ft_1] != nan_val
-        ft_2_imp_mask |= imputed_data[ft_2] != nan_val
-        ft_3_imp_mask |= imputed_data[ft_3] != nan_val
-
-        for feature in list(data.columns):
-            nonans_mask &= data[feature] != nan_val
-
-    ft_1_mask = ft_1_nan_mask & ft_1_imp_mask
-    ft_2_mask = ft_2_nan_mask & ft_2_imp_mask
-    ft_3_mask = ft_3_nan_mask & ft_3_imp_mask
-
-    masks = {
-        ft_1: (ft_1_mask, ft_1_imp_mask, ft_1_nan_mask),
-        ft_2: (ft_2_mask, ft_2_imp_mask, ft_2_nan_mask),
-        ft_3: (ft_3_mask, ft_3_imp_mask, ft_3_nan_mask),
-    }
-
-    x_label = f'{ft_1} - {ft_2}'
-    y_label = f'{ft_2} - {ft_3}'
-
-    fig, ax = plt.subplots(figsize=figsize)
-
-    common_mask = nonans_mask
-    for x in masks.values():
-        common_mask |= x[0]
-
-    _, ax = plotScatterDensity2d(
-        (imputed_data[ft_1]-imputed_data[ft_2])[common_mask],
-        (imputed_data[ft_2]-imputed_data[ft_3])[common_mask],
-        x_label=x_label,
-        y_label=y_label,
-        density_mode='both',
-        density_alpha_mode='normal',
-        density_color_mode='normal',
-        cmap='bone',
-        s=30,
-        alpha=0.5,
-        ax=ax
-    )
-
-    legend_patches = [
-        mpatches.Patch(color='#717f9a', label='No missing data')
-    ]
-
-    buffs = []
-    for i, ft in enumerate([ft_1, ft_2, ft_3]):
-        buff = _plot_tmpax(
-            ax,
-            datax=(imputed_data[ft_1]-imputed_data[ft_2])[masks[ft][0]],
-            datay=(imputed_data[ft_2]-imputed_data[ft_3])[masks[ft][0]],
-            color=ft_colors[i],
-            s=40
-        )
-        buffs.append(buff)
-        perc = np.sum(masks[ft][0])/data.shape[0]
-        legend_patches.append(
-            mpatches.Patch(
-                color=ft_colors[i],
-                label=f'Imputed {ft} ({perc:.2%})'
-            )
-        )
-
-    if common_missing_data:
-        common_mask = None
-        for x in masks.values():
-            if common_mask is None:
-                common_mask = x[0]
-            else:
-                common_mask &= x[0]
-
-        buff_c = _plot_tmpax(
-            ax,
-            datax=(imputed_data[ft_1]-imputed_data[ft_2])[common_mask],
-            datay=(imputed_data[ft_2]-imputed_data[ft_3])[common_mask],
-            color=ft_colors[i],
-            s=40
-        )
-
-        legend_patches.append(
-            mpatches.Patch(
-                color=ft_colors[3],
-                label=f'Imputed {ft_1} & {ft_2} & {ft_3}'
-            )
-        )
-
-    x_lim = ax.get_xlim()
-    y_lim = ax.get_ylim()
-    extent = [x_lim[0], x_lim[1], y_lim[0], y_lim[1]]
-
-    z_order = 2
-    for buff in buffs:
-        ax.imshow(buff, alpha=0.6, extent=extent, zorder=z_order)
-        z_order += 1
-
-    for buff_i, buff_j in itertools.combinations(buffs, 2):
-        blended = np.zeros_like(buff_i)
-        blended[..., 0] = np.add(buff_i[..., 0], buff_j[..., 0]).clip(0, 255)
-        blended[..., 1] = np.add(buff_i[..., 1], buff_j[..., 1]).clip(0, 255)
-        blended[..., 2] = np.add(buff_i[..., 2], buff_j[..., 2]).clip(0, 255)
-        # NOTE: we use minimum as blending function for the alpha channel
-        #       so that only common pionts have null transparency
-        blended[..., 3] = np.minimum(buff_i[..., 3], buff_j[..., 3])
-        ax.imshow(blended, alpha=0.4, extent=extent, zorder=z_order)
-        z_order += 1
-
-    if common_missing_data:
-        ax.imshow(buff_c, alpha=0.2, extent=extent, zorder=z_order)
-
-    ax.legend(
-        loc="lower left",
-        bbox_to_anchor=(0, 1.02, 1, 0.2),
-        handles=legend_patches,
-        mode="expand",
-        ncol=2,
-        borderaxespad=0
-    )
-    plt.tight_layout()
-
-    return fig, ax
-
-
-def plotFeatureImportance(importances, std, labels):
+def plot_feature_impotrance(importances, std, labels):
 
     indices = np.argsort(importances)[::-1]
 
@@ -811,102 +621,14 @@ def plotFeatureImportance(importances, std, labels):
 #        Other TF2 utility functions         #
 ##############################################
 
-
-def getDatasets(xdata, ydata, train_split=0.6, val_split=0,
-                categorical=True, as_tf_dataset=True):
-    # Splitting dataset
-    ids = np.arange(xdata.shape[0])
-
-    datasets = train_test_split(
-        ids,
-        xdata,
-        ydata,
-        test_size=(1-train_split),
-        shuffle=True,
-    )
-
-    n_input_features = xdata.shape[-1]
-
-    ids_train = datasets[0]
-    ids_test = datasets[1]
-
-    X_train = datasets[2]
-    X_test = datasets[3]
-
-    y_train = datasets[4]
-    y_test = datasets[5]
-
-    if val_split > 0:
-        sub_datasets = train_test_split(
-            X_train,
-            y_train,
-            test_size=val_split,
-            shuffle=True
-        )
-
-        X_train = sub_datasets[0]
-        X_val = sub_datasets[1]
-        y_train = sub_datasets[2]
-        y_val = sub_datasets[3]
-        if categorical:
-            Y_val_categorical = tf.keras.utils.to_categorical(y_val)
-        else:
-            Y_val_categorical = y_val
-
-        if as_tf_dataset:
-            val_data = tf.data.Dataset.from_tensor_slices(
-                (X_val, Y_val_categorical)
-            )
-        else:
-            val_data = (X_val, Y_val_categorical)
-    else:
-        val_data = None
-
-    if categorical:
-        Y_train_categorical = tf.keras.utils.to_categorical(y_train)
-        Y_test_categorical = tf.keras.utils.to_categorical(y_test)
-        n_noutputs = Y_train_categorical.shape[-1]
-    else:
-        Y_train_categorical = y_train
-        Y_test_categorical = y_test
-        n_noutputs = y_train.shape[-1]
-
-    if as_tf_dataset:
-        train_data = tf.data.Dataset.from_tensor_slices(
-            (X_train, Y_train_categorical)
-        )
-
-        test_data = tf.data.Dataset.from_tensor_slices(
-            (X_test, Y_test_categorical)
-        )
-    else:
-        train_data = (X_train, Y_train_categorical)
-        test_data = (X_test, Y_test_categorical)
-
-    if val_data:
-        return (
-            (n_input_features, n_noutputs),
-            train_data,
-            test_data,
-            val_data,
-            (ids_train, ids_test)
-        )
-    else:
-        return (
-            (n_input_features, n_noutputs),
-            train_data,
-            test_data,
-            (ids_train, ids_test)
-        )
-
-def permutationImportanceDataset(model, test_dataset, shuffle_index=1,
+def get_permutation_importance_dataset(model, test_dataset, shuffle_index=1,
                                    n_repeats=5, default_metric='accuracy'):
     # NOTE: there is no easy way to shuffle a single column of a
     #       TF2 Dataset, so the only way to do this is to convert
     #       back the datasets to numpy arrays
     xx = np.array([i[0] for i in test_dataset.as_numpy_iterator()])
     yy = np.array([i[1] for i in test_dataset.as_numpy_iterator()])
-    return permutationImportance(
+    return permutation_importance(
         model,
         xx, yy,
         shuffle_index=shuffle_index,
@@ -915,7 +637,7 @@ def permutationImportanceDataset(model, test_dataset, shuffle_index=1,
     )
 
 
-def permutationImportance(model, x_data, y_data=None, n_repeats=5,
+def permutation_importance(model, x_data, y_data=None, n_repeats=5,
                            use_metric='accuracy', batch_size=32):
     def to_numpy(x):
         if isinstance(x, np.ndarray):

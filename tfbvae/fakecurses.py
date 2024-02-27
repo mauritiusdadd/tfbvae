@@ -3,11 +3,12 @@
 """
 Created on Mon Dec 13 16:31:25 2021
 
-@author: daddona
+@author: Maurizio D'Addona
 """
 import os
 import sys
 import threading
+import typing
 
 try:
     import curses
@@ -21,7 +22,8 @@ try:
 except ImportError:
     HAS_IPYTHON = False
 
-def isnotebook():
+
+def is_notebook():
     """
     Check if the code is run in a standard interpreter or in a
     IPython shell / Jupyter notebook
@@ -64,44 +66,7 @@ _lines_buffer = {}
 _lines_buffer_lock = threading.Condition()
 
 
-def ncurseinit():
-    if HAS_CURSES and isnotebook() is None:
-        stdscr = curses.initscr()
-        curses.noecho()
-        stdscr.keypad(True)
-        curses.curs_set(0)
-        try:
-            curses.cbreak()
-        except Exception:
-            print("cbreak mode unavailable")
-        return stdscr
-    else:
-        return FakeCurses()
-
-
-def ncursereset(stdscr):
-    if HAS_CURSES and stdscr is not None:
-        if isinstance(stdscr, FakeCurses):
-            return
-        try:
-            curses.nocbreak()
-        except Exception:
-            print("buffer mode unavailable")
-        curses.curs_set(1)
-        stdscr.keypad(False)
-        curses.echo()
-        curses.endwin()
-
-
-def ncursedoupdate(stdscr):
-    if HAS_CURSES and stdscr is not None:
-        if isinstance(stdscr, FakeCurses):
-            stdscr.doupdate()
-        else:
-            curses.doupdate()
-
-
-class FakeCurses():
+class FakeCurses:
 
     def __init__(self):
         self.lines = []
@@ -132,7 +97,8 @@ class FakeCurses():
         _lines_buffer_lock.release()
         self.lines = []
 
-    def doupdate(self):
+    @staticmethod
+    def doupdate():
         global _lines_buffer
         global _lines_buffer_lock
         buffer = ""
@@ -146,7 +112,7 @@ class FakeCurses():
                 buffer += new_line
             buffer += "\r\n"
 
-        if isnotebook() is not None and HAS_IPYTHON:
+        if is_notebook() is not None and HAS_IPYTHON:
             clear_output()
 
         if os.name == 'nt':
@@ -158,10 +124,80 @@ class FakeCurses():
         sys.stdout.flush()
         _lines_buffer_lock.release()
 
-    def clear(self):
+    @staticmethod
+    def clear():
         global _lines_buffer
         _lines_buffer = {}
 
     def refresh(self):
         self.noutrefresh()
         self.doupdate()
+
+
+def ncurseinit() -> typing.Union[FakeCurses, curses.window]:
+    """
+    Init ncurse backend.
+
+    Returns
+    -------
+    backend: FakeCurses or curses.window
+        The curse backend.
+    """
+    if HAS_CURSES and is_notebook() is None:
+        stdscr = curses.initscr()
+        curses.noecho()
+        stdscr.keypad(True)
+        curses.curs_set(0)
+        try:
+            curses.cbreak()
+        except Exception:
+            print("cbreak mode unavailable")
+        return stdscr
+    else:
+        return FakeCurses()
+
+
+def ncursereset(stdscr: typing.Union[FakeCurses, curses.window]) -> None:
+    """
+    Set ncurse backend.
+
+    Parameters
+    ----------
+    stdscr : FakeCurses or curses.window
+
+    Returns
+    -------
+    None
+
+    """
+    if HAS_CURSES and stdscr is not None:
+        if isinstance(stdscr, FakeCurses):
+            return
+        try:
+            curses.nocbreak()
+        except Exception:
+            print("buffer mode unavailable")
+        curses.curs_set(1)
+        stdscr.keypad(False)
+        curses.echo()
+        curses.endwin()
+
+
+def ncursedoupdate(stdscr: typing.Union[FakeCurses, curses.window]):
+    """
+    Update ncurse.
+
+    Parameters
+    ----------
+    stdscr : FakeCurses or curses.window
+
+    Returns
+    -------
+    None
+
+    """
+    if HAS_CURSES and stdscr is not None:
+        if isinstance(stdscr, FakeCurses):
+            stdscr.doupdate()
+        else:
+            curses.doupdate()
